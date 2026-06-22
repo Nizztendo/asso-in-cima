@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0b3d2e">
+<title>Asso in Cima</title>
+<style>
+  :root{
+    --cw: clamp(46px, 11vw, 72px);
+    --ch: calc(var(--cw) * 1.6);
+    --gap: clamp(6px, 1.8vw, 14px);
+    --felt:#0b3d2e; --feltLight:#11553e;
+    --row-w: calc(4 * var(--cw) + 3 * var(--gap));
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{
+    margin:0; padding:0; width:100%; overflow-x:hidden;
+    background: radial-gradient(ellipse at top, var(--feltLight), var(--felt) 70%);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    color:#fff; user-select:none;
+  }
+  #app{
+    min-height:100vh; display:flex; flex-direction:column; align-items:center;
+    padding: 14px 8px calc(100px + env(safe-area-inset-bottom)) 8px;
+    position:relative;
+  }
+  /* All rows are exactly 4 card-widths + 3 gaps, centered on page */
+  .row{
+    display:flex; gap:var(--gap); align-items:flex-start;
+    justify-content:center;
+    width:var(--row-w); max-width:calc(100vw - 16px);
+  }
+
+  /* Slots: use box-shadow so inner area is exactly --cw × --ch, cards fit flush */
+  .slot{
+    width:var(--cw); height:var(--ch);
+    box-shadow: 0 0 0 2px rgba(255,255,255,0.22);
+    border-radius:8px; position:relative; flex-shrink:0;
+  }
+
+  /* ── Foundations ── */
+  #foundations{ margin-bottom:var(--gap); }
+  #foundations .slot{ box-shadow: 0 0 0 2px rgba(255,215,0,0.3); }
+
+  /* Ghost-ace placeholder */
+  #foundations .slot::before{
+    content:''; position:absolute; inset:0; border-radius:7px;
+    background-image: url('cards.png');
+    background-size: calc(var(--cw) * 12.8) calc(var(--ch) * 4);
+    background-repeat: no-repeat;
+    filter: grayscale(1) opacity(0.3);
+  }
+  #foundations .slot[data-suit="denari"]::before { background-position: calc(-5 * var(--cw)) calc(-2 * var(--ch)); }
+  #foundations .slot[data-suit="coppe"]::before  { background-position: calc(-5 * var(--cw)) calc(-1 * var(--ch)); }
+  #foundations .slot[data-suit="bastoni"]::before { background-position: calc(-1 * var(--cw)) 0; }
+  #foundations .slot[data-suit="spade"]::before  { background-position: calc(-8 * var(--cw)) calc(-1 * var(--ch)); }
+  #foundations .slot:has(.card)::before{ display:none; }
+
+  /* ── Stock + Waste row: left-aligned so stock lines up with denari column ── */
+  #stockwaste{ justify-content:flex-start; }
+  #stockArea{ position:relative; width:var(--cw); height:var(--ch); flex-shrink:0; }
+  .stockback{
+    position:absolute; inset:0; border-radius:8px;
+    background-image: url('cards.png');
+    background-size: calc(var(--cw) * 12.8) calc(var(--ch) * 4);
+    background-repeat: no-repeat;
+    background-position: 0 0;
+    border:2px solid #444;
+  }
+  #wasteArea{ position:relative; height:var(--ch); flex:1; min-width:0; }
+
+  /* ── Tableau ── */
+  #tableau{ margin-bottom: calc(var(--ch) * 1.6); position:relative; }
+  #tableau .slot{ overflow:visible; }
+
+  /* ── Cards ── */
+  .card{
+    position:absolute; top:0; left:0;
+    width:var(--cw); height:var(--ch);
+    border-radius:7px;
+    background-image: url('cards.png');
+    background-size: calc(var(--cw) * 12.8) calc(var(--ch) * 4);
+    background-repeat: no-repeat;
+    border:1px solid rgba(0,0,0,0.2);
+    touch-action:none; cursor:grab;
+  }
+  .card.dragging{ opacity:0; }
+  .ghost{ position:fixed; pointer-events:none; z-index:999; }
+  .ghost .card{ position:absolute; }
+
+  /* ── UI chrome ── */
+  #hint{
+    position:fixed; bottom:calc(90px + env(safe-area-inset-bottom));
+    left:50%; transform:translateX(-50%);
+    background:rgba(0,0,0,0.7); padding:8px 16px; border-radius:20px;
+    font-size:14px; opacity:0; transition:opacity 0.25s;
+    pointer-events:none; white-space:nowrap; z-index:50;
+  }
+  #hint.show{ opacity:1; }
+  #newDealBtn{
+    position:fixed; top:calc(10px + env(safe-area-inset-top)); left:10px;
+    background:rgba(255,255,255,0.12); border:1px solid rgba(255,255,255,0.3);
+    color:#fff; padding:6px 12px; border-radius:14px; font-size:13px;
+    z-index:40; cursor:pointer;
+  }
+  #overlay{ position:fixed; inset:0; background:rgba(0,0,0,0.55); display:none; align-items:center; justify-content:center; z-index:100; padding:20px; }
+  #overlay.show{ display:flex; }
+  #overlayPanel{ background:#1b1b1b; border-radius:14px; padding:24px; text-align:center; max-width:320px; }
+  #overlayPanel button{ margin-top:14px; background:#d4af37; border:none; padding:10px 22px; border-radius:10px; font-weight:700; font-size:15px; cursor:pointer; }
+</style>
+</head>
+<body>
+<div id="app">
+  <button id="newDealBtn">Nuova partita</button>
+
+  <!-- Official Neapolitan suit order: Denari, Coppe, Bastoni, Spade -->
+  <div id="foundations" class="row">
+    <div class="slot" data-dropzone="foundation-denari"  data-suit="denari"></div>
+    <div class="slot" data-dropzone="foundation-coppe"   data-suit="coppe"></div>
+    <div class="slot" data-dropzone="foundation-bastoni" data-suit="bastoni"></div>
+    <div class="slot" data-dropzone="foundation-spade"   data-suit="spade"></div>
+  </div>
+
+  <div id="tableau" class="row">
+    <div class="slot" data-dropzone="tableau-0" data-col="0"></div>
+    <div class="slot" data-dropzone="tableau-1" data-col="1"></div>
+    <div class="slot" data-dropzone="tableau-2" data-col="2"></div>
+    <div class="slot" data-dropzone="tableau-3" data-col="3"></div>
+  </div>
+
+  <!-- Stock left-aligned with denari (leftmost) column; waste fills remaining space -->
+  <div id="stockwaste" class="row">
+    <div id="stockArea" data-dropzone="stock"></div>
+    <div id="wasteArea" data-dropzone="waste"></div>
+  </div>
+
+  <div id="hint"></div>
+</div>
+
+<div id="overlay">
+  <div id="overlayPanel">
+    <h2 id="overlayTitle">Hai vinto!</h2>
+    <p id="overlaySub"></p>
+    <button id="playAgainBtn">Gioca ancora</button>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  // Atlas sprite map: [col, row] in 160×256 grid within cards.png (2048×1024)
+  const ATLAS = {
+    bastoni: {1:[1,0],2:[0,1],3:[1,1],4:[2,1],5:[3,0],6:[4,0],7:[3,1],8:[5,0],9:[4,1],10:[2,0]},
+    coppe:   {1:[5,1],2:[1,2],3:[0,3],4:[2,2],5:[1,3],6:[3,2],7:[2,3],8:[4,2],9:[3,3],10:[0,2]},
+    denari:  {1:[5,2],2:[5,3],3:[6,0],4:[7,0],5:[6,1],6:[8,0],7:[7,1],8:[9,0],9:[6,2],10:[4,3]},
+    spade:   {1:[8,1],2:[7,2],3:[9,1],4:[6,3],5:[11,0],6:[8,2],7:[10,1],8:[7,3],9:[9,2],10:[10,0]}
+  };
+
+  // Official Neapolitan suit order
+  const SUITS = ['denari','coppe','bastoni','spade'];
+  const GROUP = { denari:'wealth', coppe:'wealth', spade:'weapons', bastoni:'weapons' };
+
+  function buildDeck(){ const d=[]; for(const s of SUITS) for(let r=1;r<=10;r++) d.push({suit:s,rank:r,id:s+r}); return d; }
+  function shuffle(arr){ for(let i=arr.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [arr[i],arr[j]]=[arr[j],arr[i]]; } return arr; }
+
+  let tableau, foundation, stock, waste, batchSize, wasteFanned;
+
+  function newGame(){
+    const deck = shuffle(buildDeck());
+    tableau = [[deck[0]],[deck[1]],[deck[2]],[deck[3]]];
+    stock = deck.slice(4);
+    waste = []; batchSize = 0; wasteFanned = false;
+    foundation = {denari:0, coppe:0, bastoni:0, spade:0};
+    document.getElementById('overlay').classList.remove('show');
+    renderAll();
+  }
+  function dealFromStock(){
+    if(stock.length===0) return;
+    batchSize = Math.min(4, stock.length);
+    wasteFanned = true;
+    const batch = stock.splice(0, batchSize);
+    for(const c of batch) waste.push(c);
+    renderAll();
+  }
+  function recycleStock(){
+    if(stock.length>0 || waste.length===0) return;
+    stock = waste.slice(); waste = []; batchSize = 0; wasteFanned = false;
+    renderAll();
+  }
+  function foundationCard(suit){ const r=foundation[suit]; return r>0?{suit,rank:r,id:suit+r}:null; }
+  function isValidFoundationMove(card){ const top=foundation[card.suit]; return top===0?card.rank===1:card.rank===top+1; }
+  function isValidTableauTarget(movingBottomCard, colIdx){
+    const col=tableau[colIdx];
+    if(col.length===0) return movingBottomCard.rank===10;
+    const target=col[col.length-1];
+    return target.rank===movingBottomCard.rank+1 && GROUP[target.suit]!==GROUP[movingBottomCard.suit];
+  }
+  function anyMovesAvailable(){
+    for(let ci=0;ci<4;ci++){
+      const col=tableau[ci]; if(!col.length) continue;
+      const top=col[col.length-1];
+      if(isValidFoundationMove(top)) return true;
+      for(let cj=0;cj<4;cj++){ if(cj!==ci&&isValidTableauTarget(top,cj)) return true; }
+    }
+    if(batchSize>0&&waste.length){
+      const w=waste[waste.length-1];
+      if(isValidFoundationMove(w)) return true;
+      for(let cj=0;cj<4;cj++) if(isValidTableauTarget(w,cj)) return true;
+    }
+    for(const s of SUITS){ const f=foundationCard(s); if(f){ for(let cj=0;cj<4;cj++) if(isValidTableauTarget(f,cj)) return true; } }
+    return false;
+  }
+  function checkWinLoss(){
+    if(SUITS.every(s=>foundation[s]===10)){ showOverlay(true); return; }
+    if(stock.length===0&&waste.length===0&&!anyMovesAvailable()) showOverlay(false);
+  }
+  function showOverlay(win){
+    document.getElementById('overlayTitle').textContent = win?"Hai vinto!":"Nessuna mossa";
+    document.getElementById('overlaySub').textContent   = win?"Tutte e 40 le carte a casa.":"Il tavolo è bloccato.";
+    document.getElementById('overlay').classList.add('show');
+  }
+  let hintTimer=null;
+  function showHint(msg){
+    const h=document.getElementById('hint');
+    h.textContent=msg; h.classList.add('show');
+    clearTimeout(hintTimer); hintTimer=setTimeout(()=>h.classList.remove('show'),1400);
+  }
+
+  function makeCardEl(card){
+    const el=document.createElement('div');
+    el.className='card';
+    el.dataset.suit=card.suit; el.dataset.rank=card.rank;
+    const [col,row]=ATLAS[card.suit][card.rank];
+    el.style.backgroundPosition=`calc(${-col} * var(--cw)) calc(${-row} * var(--ch))`;
+    return el;
+  }
+  function clearChildren(el){ while(el.firstChild) el.removeChild(el.firstChild); }
+  function renderAll(){ renderFoundations(); renderTableau(); renderStockWaste(); checkWinLoss(); }
+
+  function renderFoundations(){
+    for(const s of SUITS){
+      const slot=document.querySelector(`[data-dropzone="foundation-${s}"]`);
+      clearChildren(slot);
+      const r=foundation[s];
+      if(r>0){
+        const el=makeCardEl({suit:s,rank:r,id:s+r});
+        el.style.position='absolute'; el.style.inset='0';
+        el.style.width='100%'; el.style.height='100%';
+        el.style.borderRadius='7px';
+        el.dataset.source='foundation'; el.dataset.suit=s;
+        attachPointer(el,{type:'foundation',suit:s});
+        slot.appendChild(el);
+      }
+    }
+  }
+
+  function getCH(){ return document.querySelector('#tableau .slot').getBoundingClientRect().height; }
+
+  function renderTableauCol(ci, CH){
+    const slot=document.querySelector(`[data-dropzone="tableau-${ci}"]`);
+    clearChildren(slot);
+    tableau[ci].forEach((card,i)=>{
+      const el=makeCardEl(card);
+      el.style.top=(i===0?0:0.5*CH+(i-1)*0.12*CH)+'px';
+      el.style.left='0'; el.style.zIndex=i+1;
+      el.dataset.source='tableau'; el.dataset.col=ci; el.dataset.index=i;
+      attachPointer(el,{type:'tableau',col:ci,index:i});
+      slot.appendChild(el);
+    });
+  }
+
+  function renderTableau(){
+    const CH=getCH();
+    for(let ci=0;ci<4;ci++) renderTableauCol(ci,CH);
+  }
+
+  function renderStockWaste(){
+    const stockArea=document.getElementById('stockArea');
+    clearChildren(stockArea);
+    if(stock.length>0){
+      const back=document.createElement('div'); back.className='stockback';
+      stockArea.appendChild(back);
+    } else if(waste.length>0){
+      const back=document.createElement('div');
+      back.style.cssText='position:absolute;inset:0;border-radius:8px;border:2px dashed rgba(255,255,255,0.3);';
+      stockArea.appendChild(back);
+    }
+    const wasteArea=document.getElementById('wasteArea');
+    clearChildren(wasteArea);
+    if(batchSize>0){
+      const shown=waste.slice(-batchSize);
+      const CW=parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--cw'))||60;
+      if(wasteFanned){
+        // Fan layout: cards spread with sliver offsets
+        const sliver=CW*0.28;
+        shown.forEach((card,i)=>{
+          const el=makeCardEl(card);
+          const isTop=(i===shown.length-1);
+          el.style.left=(i*sliver)+'px'; el.style.top='0'; el.style.zIndex=i+1;
+          if(isTop){ el.dataset.source='waste'; attachPointer(el,{type:'waste'}); }
+          else el.style.cursor='default';
+          wasteArea.appendChild(el);
+        });
+      } else {
+        // Single stack: just show the top card
+        const el=makeCardEl(shown[shown.length-1]);
+        el.style.left='0'; el.style.top='0'; el.style.zIndex=10;
+        el.dataset.source='waste'; attachPointer(el,{type:'waste'});
+        wasteArea.appendChild(el);
+      }
+    }
+  }
+
+  let dragCtx=null;
+  const THRESH=10;
+  function attachPointer(el,info){
+    el.addEventListener('pointerdown',(e)=>{
+      e.preventDefault();
+      const cardsToDrag=collectDragCards(info);
+      if(!cardsToDrag.length) return;
+      dragCtx={info,cards:cardsToDrag,startX:e.clientX,startY:e.clientY,moved:false,ghostEl:null};
+      el.setPointerCapture&&el.setPointerCapture(e.pointerId);
+      document.addEventListener('pointermove',onPointerMove);
+      document.addEventListener('pointerup',onPointerUp,{once:true});
+    });
+  }
+  function collectDragCards(info){
+    if(info.type==='tableau') return tableau[info.col].slice(info.index);
+    if(info.type==='waste')   return waste.length?[waste[waste.length-1]]:[];
+    if(info.type==='foundation'){ const c=foundationCard(info.suit); return c?[c]:[]; }
+    return [];
+  }
+  function onPointerMove(e){
+    if(!dragCtx) return;
+    const dx=e.clientX-dragCtx.startX, dy=e.clientY-dragCtx.startY;
+    if(!dragCtx.moved&&Math.hypot(dx,dy)<THRESH) return;
+    if(!dragCtx.moved){
+      dragCtx.moved=true;
+      buildGhost();
+      hideSourceEls();
+      revealBelowDragged(); // show whatever is under the dragged card immediately
+    }
+    if(dragCtx.ghostEl){
+      dragCtx.ghostEl.style.left=(e.clientX-dragCtx.offsetX)+'px';
+      dragCtx.ghostEl.style.top =(e.clientY-dragCtx.offsetY)+'px';
+    }
+  }
+  function buildGhost(){
+    const CW=document.querySelector('.card')?document.querySelector('.card').getBoundingClientRect().width:60;
+    const CH=CW*1.6;
+    const ghost=document.createElement('div'); ghost.className='ghost';
+    ghost.style.width=CW+'px'; ghost.style.height=(CH+(dragCtx.cards.length-1)*CH*0.12)+'px';
+    dragCtx.cards.forEach((c,i)=>{
+      const el=makeCardEl(c);
+      el.style.top=(i*CH*0.12)+'px'; el.style.left='0'; el.style.zIndex=i+1;
+      ghost.appendChild(el);
+    });
+    document.body.appendChild(ghost);
+    dragCtx.ghostEl=ghost; dragCtx.offsetX=CW/2; dragCtx.offsetY=CH*0.25;
+    ghost.style.left=(dragCtx.startX-dragCtx.offsetX)+'px';
+    ghost.style.top =(dragCtx.startY-dragCtx.offsetY)+'px';
+  }
+  function hideSourceEls(){
+    const info=dragCtx.info; let selector;
+    if(info.type==='tableau')    selector=`[data-source="tableau"][data-col="${info.col}"]`;
+    else if(info.type==='waste') selector=`[data-source="waste"]`;
+    else if(info.type==='foundation') selector=`[data-source="foundation"][data-suit="${info.suit}"]`;
+    document.querySelectorAll(selector).forEach(el=>{
+      if(info.type==='tableau'){ if(parseInt(el.dataset.index,10)>=info.index) el.classList.add('dragging'); }
+      else el.classList.add('dragging');
+    });
+  }
+  // Immediately show whatever is underneath the dragged card in its source area
+  function revealBelowDragged(){
+    const info=dragCtx.info;
+
+    if(info.type==='tableau'){
+      const CH=getCH();
+      const slot=document.querySelector(`[data-dropzone="tableau-${info.col}"]`);
+      clearChildren(slot);
+      tableau[info.col].slice(0,info.index).forEach((card,i)=>{
+        const el=makeCardEl(card);
+        el.style.top=(i===0?0:0.5*CH+(i-1)*0.12*CH)+'px';
+        el.style.left='0'; el.style.zIndex=i+1;
+        slot.appendChild(el);
+      });
+      return;
+    }
+
+    if(info.type==='foundation'){
+      const slot=document.querySelector(`[data-dropzone="foundation-${info.suit}"]`);
+      clearChildren(slot); // removing the card lets ::before ghost-ace show if rank was 1
+      const belowRank=foundation[info.suit]-1;
+      if(belowRank>0){
+        const el=makeCardEl({suit:info.suit,rank:belowRank,id:info.suit+belowRank});
+        el.style.position='absolute'; el.style.inset='0';
+        el.style.width='100%'; el.style.height='100%'; el.style.borderRadius='7px';
+        slot.appendChild(el);
+      }
+      return;
+    }
+
+    if(info.type==='waste'){
+      const previewWaste=waste.slice(0,-1); // waste without the top card
+      const wasteArea=document.getElementById('wasteArea');
+      clearChildren(wasteArea);
+      const CW=parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--cw'))||60;
+
+      if(wasteFanned && batchSize>1){
+        // Still have cards remaining in the fan
+        const previewBatch=previewWaste.slice(-(batchSize-1));
+        const sliver=CW*0.28;
+        previewBatch.forEach((card,i)=>{
+          const el=makeCardEl(card);
+          el.style.left=(i*sliver)+'px'; el.style.top='0'; el.style.zIndex=i+1;
+          el.style.cursor='default';
+          wasteArea.appendChild(el);
+        });
+      } else if(previewWaste.length>0){
+        // Fan exhausted or single stack — show remaining as single stack preview
+        const el=makeCardEl(previewWaste[previewWaste.length-1]);
+        el.style.left='0'; el.style.top='0'; el.style.zIndex=10;
+        el.style.cursor='default';
+        wasteArea.appendChild(el);
+      }
+      return;
+    }
+  }
+  function onPointerUp(e){
+    document.removeEventListener('pointermove',onPointerMove);
+    if(!dragCtx) return;
+    const ctx=dragCtx;
+    if(!ctx.moved){ tryQuickMove(ctx.info); dragCtx=null; return; }
+    if(ctx.ghostEl) ctx.ghostEl.remove();
+    document.querySelectorAll('.dragging').forEach(el=>el.classList.remove('dragging'));
+    const dropEl=document.elementFromPoint(e.clientX,e.clientY);
+    const zoneEl=dropEl?dropEl.closest('[data-dropzone]'):null;
+    let success=false;
+    if(zoneEl) success=attemptDrop(ctx,zoneEl.dataset.dropzone);
+    if(!success) showHint("Non si può");
+    renderAll();
+    dragCtx=null;
+  }
+  function attemptDrop(ctx,zone){
+    const bottomCard=ctx.cards[0];
+    if(zone.startsWith('foundation-')){
+      if(ctx.cards.length!==1) return false;
+      const suit=zone.split('-')[1]; const card=ctx.cards[0];
+      if(card.suit!==suit||!isValidFoundationMove(card)) return false;
+      removeFromSource(ctx.info,1); foundation[suit]=card.rank; return true;
+    }
+    if(zone.startsWith('tableau-')){
+      const col=parseInt(zone.split('-')[1],10);
+      if(ctx.info.type==='tableau'&&ctx.info.col===col) return false;
+      if(!isValidTableauTarget(bottomCard,col)) return false;
+      removeFromSource(ctx.info,ctx.cards.length);
+      tableau[col]=tableau[col].concat(ctx.cards);
+      return true;
+    }
+    return false;
+  }
+  function removeFromSource(info,count){
+    if(info.type==='tableau') tableau[info.col].splice(info.index,count);
+    else if(info.type==='waste'){
+      waste.pop();
+      batchSize=Math.max(0,batchSize-1);
+      if(batchSize===0&&waste.length>0){
+        // Fan exhausted — surface remaining cards as a single stack (not fanned)
+        wasteFanned=false;
+        batchSize=waste.length;
+      }
+    }
+    else if(info.type==='foundation') foundation[info.suit]-=1;
+  }
+  function tryQuickMove(info){
+    const cards=collectDragCards(info);
+    if(!cards.length) return;
+    if(info.type==='tableau'&&info.index!==tableau[info.col].length-1){ showHint("Solo la carta in cima"); return; }
+    const card=cards[0];
+    if(isValidFoundationMove(card)){ removeFromSource(info,1); foundation[card.suit]=card.rank; renderAll(); }
+    else showHint("Nessuna mossa");
+  }
+
+  document.getElementById('stockArea').addEventListener('click',()=>{
+    if(stock.length>0) dealFromStock();
+    else if(waste.length>0) recycleStock();
+  });
+  document.getElementById('newDealBtn').addEventListener('click',newGame);
+  document.getElementById('playAgainBtn').addEventListener('click',newGame);
+  window.addEventListener('resize',renderAll);
+
+  newGame();
+})();
+</script>
+</body>
+</html>
