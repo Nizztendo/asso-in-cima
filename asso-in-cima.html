@@ -8,6 +8,8 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#0b3d2e">
 <link rel="manifest" href="manifest.json">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700&display=swap" rel="stylesheet">
 <title>Asso in Cima</title>
 <style>
   :root{
@@ -26,7 +28,7 @@
   }
   #app{
     min-height:100vh; display:flex; flex-direction:column; align-items:center;
-    padding: calc(50px + env(safe-area-inset-top)) 8px calc(20px + env(safe-area-inset-bottom)) 8px;
+    padding: calc(12px + env(safe-area-inset-top)) 8px calc(20px + env(safe-area-inset-bottom)) 8px;
     position:relative;
   }
   /* All rows are exactly 4 card-widths + 3 gaps, centered on page */
@@ -101,14 +103,31 @@
     pointer-events:none; white-space:nowrap; z-index:50;
   }
   #hint.show{ opacity:1; }
+  #gameTitle{
+    width:var(--row-w); max-width:calc(100vw - 16px);
+    text-align:center; font-size:20px; font-weight:700;
+    font-family:'Cinzel', Georgia, serif;
+    letter-spacing:0.12em; color:#d4af37;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.6);
+    margin-bottom:6px;
+  }
+  #btnRow{
+    display:flex; justify-content:space-between; align-items:center;
+    width:var(--row-w); max-width:calc(100vw - 16px);
+    margin-bottom:var(--gap);
+  }
   #newDealBtn, #rulesBtn{
-    position:fixed; top:calc(10px + env(safe-area-inset-top));
     background:rgba(255,255,255,0.12); border:1px solid rgba(255,255,255,0.3);
     color:#fff; padding:6px 12px; border-radius:14px; font-size:13px;
-    z-index:40; cursor:pointer;
+    cursor:pointer;
   }
-  #newDealBtn{ left:10px; }
-  #rulesBtn{ right:10px; }
+  #undoBtn{
+    margin-left:auto; align-self:flex-end;
+    background:rgba(255,255,255,0.12); border:1px solid rgba(255,255,255,0.3);
+    color:#fff; padding:6px 12px; border-radius:14px; font-size:13px;
+    cursor:pointer; transition:opacity 0.2s; flex-shrink:0;
+  }
+  #undoBtn:disabled{ opacity:0.25; cursor:default; }
   #rulesOverlay{ position:fixed; inset:0; background:rgba(0,0,0,0.6); display:none; align-items:center; justify-content:center; z-index:200; padding:20px; }
   #rulesOverlay.show{ display:flex; }
   #rulesPanel{
@@ -131,8 +150,11 @@
 </head>
 <body>
 <div id="app">
-  <button id="newDealBtn">Nuova partita</button>
-  <button id="rulesBtn">Regole</button>
+<div id="gameTitle">Asso in Cima</div>
+  <div id="btnRow">
+    <button id="newDealBtn">Nuova partita</button>
+    <button id="rulesBtn">Regole</button>
+  </div>
 
   <!-- Official Neapolitan suit order: Denari, Coppe, Bastoni, Spade -->
   <div id="foundations" class="row">
@@ -153,6 +175,7 @@
   <div id="stockwaste" class="row">
     <div id="stockArea" data-dropzone="stock"></div>
     <div id="wasteArea" data-dropzone="waste"></div>
+    <button id="undoBtn" disabled>↩ Annulla</button>
   </div>
 
   <div id="hint"></div>
@@ -199,7 +222,7 @@
       <p>Tutte le 40 carte sulle fondamenta — dall'Asso al Re per ogni seme.</p>
     </div>
     <button id="closeRulesBtn">Got it — Capito</button>
-    <div class="version">v1.1</div>
+    <div class="version">v1.9</div>
   </div>
 </div>
 
@@ -231,6 +254,28 @@
   function shuffle(arr){ for(let i=arr.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [arr[i],arr[j]]=[arr[j],arr[i]]; } return arr; }
 
   let tableau, foundation, stock, waste, batchSize, wasteFanned, firstDealDone;
+  let prevState = null, canUndo = false;
+
+  function captureState(){
+    return {
+      tableau: tableau.map(col=>[...col]),
+      foundation: {...foundation},
+      stock: [...stock],
+      waste: [...waste],
+      batchSize, wasteFanned, firstDealDone
+    };
+  }
+  function updateUndoBtn(){
+    document.getElementById('undoBtn').disabled = !canUndo;
+  }
+  function saveUndo(){
+    prevState = captureState(); canUndo = true; updateUndoBtn();
+  }
+  function performUndo(){
+    if(!canUndo || !prevState) return;
+    ({tableau, foundation, stock, waste, batchSize, wasteFanned, firstDealDone} = prevState);
+    prevState = null; canUndo = false; updateUndoBtn(); renderAll();
+  }
 
   function newGame(){
     const deck = shuffle(buildDeck());
@@ -239,10 +284,12 @@
     waste = []; batchSize = 0; wasteFanned = false; firstDealDone = false;
     foundation = {denari:0, coppe:0, bastoni:0, spade:0};
     document.getElementById('overlay').classList.remove('show');
-    renderAll();
+    prevState = null; canUndo = false;
+    renderAll(); updateUndoBtn();
   }
   function dealFromStock(){
     if(stock.length===0) return;
+    saveUndo();
     // First deal: fill the tableau columns one card each
     if(!firstDealDone){
       firstDealDone = true;
@@ -258,6 +305,7 @@
   }
   function recycleStock(){
     if(stock.length>0 || waste.length===0) return;
+    saveUndo();
     stock = waste.slice(); waste = []; batchSize = 0; wasteFanned = false;
     renderAll();
   }
@@ -510,7 +558,7 @@
     const dropEl=document.elementFromPoint(e.clientX,e.clientY);
     const zoneEl=dropEl?dropEl.closest('[data-dropzone]'):null;
     let success=false;
-    if(zoneEl) success=attemptDrop(ctx,zoneEl.dataset.dropzone);
+    if(zoneEl){ const snap=captureState(); success=attemptDrop(ctx,zoneEl.dataset.dropzone); if(success){ prevState=snap; canUndo=true; updateUndoBtn(); } }
     if(!success) showHint("Non si può");
     renderAll();
     dragCtx=null;
@@ -551,7 +599,7 @@
     if(!cards.length) return;
     if(info.type==='tableau'&&info.index!==tableau[info.col].length-1){ showHint("Solo la carta in cima"); return; }
     const card=cards[0];
-    if(isValidFoundationMove(card)){ removeFromSource(info,1); foundation[card.suit]=card.rank; renderAll(); }
+    if(isValidFoundationMove(card)){ saveUndo(); removeFromSource(info,1); foundation[card.suit]=card.rank; renderAll(); }
     else showHint("Nessuna mossa");
   }
 
@@ -559,6 +607,7 @@
     if(stock.length>0) dealFromStock();
     else if(waste.length>0) recycleStock();
   });
+  document.getElementById('undoBtn').addEventListener('click',performUndo);
   document.getElementById('newDealBtn').addEventListener('click',newGame);
   document.getElementById('rulesBtn').addEventListener('click',()=>document.getElementById('rulesOverlay').classList.add('show'));
   document.getElementById('closeRulesBtn').addEventListener('click',()=>document.getElementById('rulesOverlay').classList.remove('show'));
