@@ -2,13 +2,12 @@
   "name": "Asso in Cima",
   "short_name": "Asso in Cima",
   "description": "Neapolitan solitaire card game",
-  "start_url": "asso-in-cima.html",
+  "start_url": "/asso-in-cima/asso-in-cima.html",
   "display": "standalone",
   "background_color": "#0b3d2e",
   "theme_color": "#0b3d2e",
   "orientation": "portrait",
   "icons": [
-    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" }
+    { "src": "icon.png", "sizes": "any", "type": "image/png" }
   ]
 }

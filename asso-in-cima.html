@@ -199,7 +199,7 @@
       <p>Tutte le 40 carte sulle fondamenta — dall'Asso al Re per ogni seme.</p>
     </div>
     <button id="closeRulesBtn">Got it — Capito</button>
-    <div class="version">v1.0</div>
+    <div class="version">v1.1</div>
   </div>
 </div>
 
@@ -567,6 +567,10 @@
   window.addEventListener('resize',renderAll);
 
   newGame();
+
+  if('serviceWorker' in navigator){
+    navigator.serviceWorker.register('sw.js');
+  }
 })();
 </script>
 </body>
